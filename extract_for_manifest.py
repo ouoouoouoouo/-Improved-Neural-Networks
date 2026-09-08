@@ -99,7 +99,7 @@ def main() -> None:
         if not sample:
             print("[warn] --verify found nothing to check against")
         else:
-            worst, worst_utt = 0.0, ""
+            worst, worst_utt = -1.0, ""
             for p in tqdm.tqdm(sample, desc="verify"):
                 d = float(np.abs(np.load(p) - extract_34dim_features(wavs[p.stem])).max())
                 if d > worst:
