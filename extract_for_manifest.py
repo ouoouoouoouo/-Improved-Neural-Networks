@@ -75,9 +75,6 @@ def main() -> None:
     missing = [u for u in wanted if u not in have]
     print(f"manifest {len(wanted)} utts | already extracted {len(wanted) - len(missing)} "
           f"| to extract {len(missing)}")
-    if not missing:
-        print("nothing to do")
-        return
 
     # utt_id -> wav path, over the whole corpus (labels are irrelevant here;
     # the manifest already decided which utterances matter).
@@ -87,7 +84,7 @@ def main() -> None:
         lost = [u for u in missing if u not in wavs][:5]
         print(f"[warn] {len(missing) - len(found)} manifest utts have no wav under "
               f"{args.iemocap}; first few: {lost}")
-    if not found:
+    if missing and not found:
         raise SystemExit("no wav found for any missing utterance — check --iemocap")
 
     # Every missing utterance is of one class (happy), so if this environment's
@@ -117,6 +114,10 @@ def main() -> None:
                     "everything from scratch in this one. Pass --verify 0 only if "
                     "you have another reason to believe this is safe. ***")
             print("verify: OK, this environment matches the original extraction")
+
+    if not missing:
+        print("nothing to do")
+        return
 
     np.random.seed(args.seed)          # extract_glove_features draws OOV vectors
     glove = load_glove(args.glove)
