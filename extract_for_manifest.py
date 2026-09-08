@@ -20,8 +20,14 @@ complementarity tool at both roots:
         kind: npy_dir
         roots: [.../processed_paper/text, .../processed_common/text]
 
-Nothing already extracted is touched or re-read, so this costs only the missing
-utterances (~1.6k) rather than a full re-run.
+Nothing already extracted is overwritten, so this costs only the missing
+utterances rather than a full re-run.
+
+Because every missing utterance belongs to one class, an environment whose
+pyAudioAnalysis differs from the one that produced the original tree would give
+that class a systematic feature offset -- a perfect predictor of the label that
+would inflate every downstream number invisibly. --verify re-extracts a sample
+of already-extracted files and refuses to continue unless they reproduce.
 
 Usage:
     python extract_for_manifest.py \
@@ -56,6 +62,10 @@ def main() -> None:
     ap.add_argument("--glove", default=f"{IEMOCAP_DIR}/glove.840B.300d.txt", type=str)
     ap.add_argument("--seed", type=int, default=0,
                     help="OOV vectors are random; fixed so a re-run reproduces")
+    ap.add_argument("--verify", type=int, default=20,
+                    help="re-extract this many ALREADY extracted audio files and "
+                         "compare against the stored .npy, to prove this "
+                         "environment reproduces the original extraction (0 skips)")
     args = ap.parse_args()
 
     with args.manifest.open(newline="", encoding="utf-8") as f:
@@ -79,6 +89,34 @@ def main() -> None:
               f"{args.iemocap}; first few: {lost}")
     if not found:
         raise SystemExit("no wav found for any missing utterance — check --iemocap")
+
+    # Every missing utterance is of one class (happy), so if this environment's
+    # pyAudioAnalysis differs from the one that produced processed_paper, the
+    # resulting systematic feature shift becomes a perfect predictor of that
+    # class and silently inflates every downstream number. Prove it matches
+    # before extracting anything.
+    if args.verify:
+        existing = sorted(p for p in (args.existing / "audio").rglob("*.npy")
+                          if p.stem in wavs)
+        sample = existing[:: max(1, len(existing) // args.verify)][:args.verify]
+        if not sample:
+            print("[warn] --verify found nothing to check against")
+        else:
+            worst, worst_utt = 0.0, ""
+            for p in tqdm.tqdm(sample, desc="verify"):
+                d = float(np.abs(np.load(p) - extract_34dim_features(wavs[p.stem])).max())
+                if d > worst:
+                    worst, worst_utt = d, p.stem
+            print(f"verify: {len(sample)} files, max abs diff {worst:.3e} ({worst_utt})")
+            if worst > 1e-4:
+                raise SystemExit(
+                    "*** This environment does NOT reproduce the stored features. "
+                    "Extracting the 595 happy utterances here would give them a "
+                    "systematic offset that a classifier can read off as the label. "
+                    "Use the environment that ran preprocess.py, or re-extract "
+                    "everything from scratch in this one. Pass --verify 0 only if "
+                    "you have another reason to believe this is safe. ***")
+            print("verify: OK, this environment matches the original extraction")
 
     np.random.seed(args.seed)          # extract_glove_features draws OOV vectors
     glove = load_glove(args.glove)
